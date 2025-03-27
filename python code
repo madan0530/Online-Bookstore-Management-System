@@ -1,0 +1,197 @@
+import sqlite3
+from datetime import datetime
+
+# Connect to SQLite (or create the database file)
+conn = sqlite3.connect('bookstore.db')
+cursor = conn.cursor()
+
+# ---------- Step 1: Create Tables ----------
+def create_tables():
+    cursor.executescript("""
+    DROP TABLE IF EXISTS Sales;
+    DROP TABLE IF EXISTS OrderItems;
+    DROP TABLE IF EXISTS Orders;
+    DROP TABLE IF EXISTS Customers;
+    DROP TABLE IF EXISTS Books;
+
+    CREATE TABLE Books (
+        book_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        author TEXT,
+        genre TEXT,
+        price REAL,
+        stock_quantity INTEGER,
+        is_discontinued INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE Customers (
+        customer_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        email TEXT UNIQUE,
+        phone TEXT,
+        address TEXT
+    );
+
+    CREATE TABLE Orders (
+        order_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_id INTEGER,
+        order_date TEXT,
+        status TEXT,
+        FOREIGN KEY (customer_id) REFERENCES Customers(customer_id)
+    );
+
+    CREATE TABLE OrderItems (
+        order_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER,
+        book_id INTEGER,
+        quantity INTEGER,
+        price_at_purchase REAL,
+        FOREIGN KEY (order_id) REFERENCES Orders(order_id),
+        FOREIGN KEY (book_id) REFERENCES Books(book_id)
+    );
+
+    CREATE TABLE Sales (
+        sale_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER,
+        sale_date TEXT,
+        total_amount REAL,
+        FOREIGN KEY (order_id) REFERENCES Orders(order_id)
+    );
+    """)
+    conn.commit()
+    print("Tables created successfully.")
+
+
+# ---------- Step 2: Add Book ----------
+def add_book(title, author, genre, price, quantity):
+    cursor.execute("""
+        INSERT INTO Books (title, author, genre, price, stock_quantity)
+        VALUES (?, ?, ?, ?, ?)
+    """, (title, author, genre, price, quantity))
+    conn.commit()
+    print("Book added successfully.")
+
+
+# ---------- Step 3: Register Customer ----------
+def register_customer(name, email, phone, address):
+    try:
+        cursor.execute("""
+            INSERT INTO Customers (name, email, phone, address)
+            VALUES (?, ?, ?, ?)
+        """, (name, email, phone, address))
+        conn.commit()
+        print("Customer registered successfully.")
+    except sqlite3.IntegrityError:
+        print("Email already exists.")
+
+
+# ---------- Step 4: Place Order ----------
+def place_order(customer_email, items):  # items = [(book_id, quantity), ...]
+    cursor.execute("SELECT customer_id FROM Customers WHERE email = ?", (customer_email,))
+    customer = cursor.fetchone()
+    if not customer:
+        print("Customer not found.")
+        return
+    customer_id = customer[0]
+    order_date = datetime.now().strftime("%Y-%m-%d")
+    cursor.execute("INSERT INTO Orders (customer_id, order_date, status) VALUES (?, ?, 'Placed')", (customer_id, order_date))
+    order_id = cursor.lastrowid
+
+    total = 0
+    for book_id, quantity in items:
+        cursor.execute("SELECT price, stock_quantity FROM Books WHERE book_id = ? AND is_discontinued = 0", (book_id,))
+        book = cursor.fetchone()
+        if book and book[1] >= quantity:
+            price = book[0]
+            total += price * quantity
+            cursor.execute("INSERT INTO OrderItems (order_id, book_id, quantity, price_at_purchase) VALUES (?, ?, ?, ?)",
+                           (order_id, book_id, quantity, price))
+            cursor.execute("UPDATE Books SET stock_quantity = stock_quantity - ? WHERE book_id = ?", (quantity, book_id))
+        else:
+            print(f"Book ID {book_id} not found or insufficient stock.")
+            return
+
+    sale_date = datetime.now().strftime("%Y-%m-%d")
+    cursor.execute("INSERT INTO Sales (order_id, sale_date, total_amount) VALUES (?, ?, ?)", (order_id, sale_date, total))
+    conn.commit()
+    print(f"Order placed successfully. Order ID: {order_id}, Total: ${total:.2f}")
+
+
+# ---------- Step 5: View Bestselling Books ----------
+def view_bestsellers():
+    cursor.execute("""
+        SELECT b.title, SUM(oi.quantity) as total_sold
+        FROM OrderItems oi
+        JOIN Books b ON oi.book_id = b.book_id
+        GROUP BY b.book_id
+        ORDER BY total_sold DESC
+        LIMIT 5
+    """)
+    for row in cursor.fetchall():
+        print(f"{row[0]} - Sold: {row[1]}")
+
+
+# ---------- Step 6: View Inventory ----------
+def view_inventory():
+    cursor.execute("SELECT book_id, title, stock_quantity FROM Books WHERE is_discontinued = 0")
+    for row in cursor.fetchall():
+        print(f"ID: {row[0]} | Title: {row[1]} | Stock: {row[2]}")
+
+
+# ---------- Step 7: CLI ----------
+def menu():
+    while True:
+        print("\n--- Online Bookstore ---")
+        print("1. Add Book")
+        print("2. Register Customer")
+        print("3. Place Order")
+        print("4. View Bestsellers")
+        print("5. View Inventory")
+        print("6. Exit")
+        choice = input("Choose an option: ")
+
+        if choice == '1':
+            title = input("Title: ")
+            author = input("Author: ")
+            genre = input("Genre: ")
+            price = float(input("Price: "))
+            quantity = int(input("Stock Quantity: "))
+            add_book(title, author, genre, price, quantity)
+
+        elif choice == '2':
+            name = input("Name: ")
+            email = input("Email: ")
+            phone = input("Phone: ")
+            address = input("Address: ")
+            register_customer(name, email, phone, address)
+
+        elif choice == '3':
+            email = input("Customer Email: ")
+            items = []
+            while True:
+                book_id = int(input("Book ID: "))
+                quantity = int(input("Quantity: "))
+                items.append((book_id, quantity))
+                more = input("Add more books? (y/n): ")
+                if more.lower() != 'y':
+                    break
+            place_order(email, items)
+
+        elif choice == '4':
+            view_bestsellers()
+
+        elif choice == '5':
+            view_inventory()
+
+        elif choice == '6':
+            break
+
+        else:
+            print("Invalid option. Try again.")
+
+
+# ---------- Run the System ----------
+if __name__ == "__main__":
+    create_tables()
+    menu()
+    conn.close()
