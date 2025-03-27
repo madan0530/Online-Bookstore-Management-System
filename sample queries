@@ -1,0 +1,41 @@
+-- a) Add new book
+INSERT INTO Books (title, author, genre, price, stock_quantity) 
+VALUES ('Atomic Habits', 'James Clear', 'Self-help', 15.99, 40);
+
+-- b) Register new customer
+INSERT INTO Customers (name, email, phone, address) 
+VALUES ('Charlie Brown', 'charlie@example.com', '1231231234', '789 Pine St');
+
+-- c) Update stock level
+UPDATE Books SET stock_quantity = 60 WHERE book_id = 2;
+
+-- d) Remove discontinued item
+UPDATE Books SET is_discontinued = TRUE WHERE book_id = 2;
+
+-- e) Generate monthly sales report
+SELECT DATE_FORMAT(sale_date, '%Y-%m') AS month, SUM(total_amount) AS total_sales
+FROM Sales
+GROUP BY month;
+
+-- f) Get bestselling books
+SELECT b.title, SUM(oi.quantity) AS total_sold
+FROM OrderItems oi
+JOIN Books b ON oi.book_id = b.book_id
+GROUP BY b.book_id
+ORDER BY total_sold DESC
+LIMIT 5;
+
+-- g) View all orders by a specific customer
+SELECT o.order_id, o.order_date, o.status
+FROM Orders o
+JOIN Customers c ON o.customer_id = c.customer_id
+WHERE c.email = 'alice@example.com';
+
+-- h) Cancel an order
+UPDATE Orders SET status = 'Cancelled' WHERE order_id = 2;
+
+-- i) View available (non-discontinued) books
+SELECT * FROM Books WHERE is_discontinued = FALSE;
+
+-- j) View stock levels for all books
+SELECT title, stock_quantity FROM Books;
